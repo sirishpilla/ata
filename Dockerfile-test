@@ -1,0 +1,48 @@
+FROM node:14.15.1 as build
+
+RUN apt-get update && apt-get install -y bash
+RUN apt-get update && apt-get install -y apt-utils
+RUN apt-get update && apt-get install -y sudo
+RUN apt-get update && apt-get install -y curl
+RUN apt-get update && apt-get install -y zip
+RUN apt-get update && apt-get install -y sshpass
+RUN apt-get update && apt-get install -y openssh-client
+
+RUN apt-get update && \
+  apt-get install --no-install-recommends -y \
+  libgtk2.0-0 \
+  libgtk-3-0 \
+  libnotify-dev \
+  libgconf-2-4 \
+  libnss3 \
+  libxss1 \
+  libasound2 \
+  libxtst6 \
+  xauth \
+  xvfb && \
+  rm -rf /var/lib/apt/lists/*
+
+RUN chpasswd && adduser root sudo
+
+RUN export PATH=$PATH:/usr/bin/sshpass
+
+ARG ARTIFACTORY_EMAIL
+ARG ARTIFACTORY_API_KEY
+
+USER root
+RUN mkdir -p /app
+RUN chown root /app
+WORKDIR /app
+ENV PATH /app/node_modules/.bin:$PATH
+
+COPY package.json ./
+COPY package-lock.json ./
+
+RUN npm config set @kite:registry https://artifactory.spectrumtoolbox.com/artifactory/api/npm/npm/
+RUN curl --fail -u ${ARTIFACTORY_EMAIL}:${ARTIFACTORY_API_KEY} https://artifactory.spectrumtoolbox.com/artifactory/api/npm/auth >> ~/.npmrc
+
+RUN npm install
+COPY . ./
+RUN sh generate-dotenv-dev.sh > .env
+
+RUN npm run start:ci

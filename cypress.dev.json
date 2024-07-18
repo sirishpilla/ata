@@ -1,0 +1,9 @@
+{
+  "$schema": "https://on.cypress.io/cypress.schema.json",
+  "baseUrl": "http://localhost:8080/",
+  "projectId": "ATA_UI",
+  "video": true,
+  "videoUploadOnPasses": true,
+  "viewportWidth": 1920,
+  "viewportHeight": 1200
+}

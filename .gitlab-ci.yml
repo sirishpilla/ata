@@ -1,0 +1,113 @@
+include: '/version.yml'
+
+stages:
+  - build
+  - deploy
+
+default:
+  tags:
+    - Dind
+
+image: docker:latest
+
+services:
+  - docker:dind
+
+variables:
+  PASSWORD: $ATA_PASSWORD
+  USERNAME: $ATA_USERNAME
+  DEV_HOST: $HOST_NAME_DEV
+  UAT_HOST: $HOST_NAME_UAT
+  DEV_IP: $IP_DEV
+  UAT_IP: $IP_UAT
+
+docker-build:
+  stage: build
+  image: docker-artifactory.spectrumflow.net/docker/docker:latest
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+  services:
+    - name: docker-artifactory.spectrumflow.net/docker/docker:dind
+  before_script:
+    - docker login docker.aws.ccit.ops.charter.com --username $NEXUS_USER --password $NEXUS_PWD
+    - echo $COT_DESKTOP_TOOLS_LOW_PASSWORD | docker login $COT_DESKTOP_TOOLS_DOCKER_LOW_REPOSITORY --username $COT_DESKTOP_TOOLS_LOW_USER --password-stdin
+  script:
+    - docker build --build-arg ARTIFACTORY_EMAIL="$ARTIFACTORY_EMAIL" --build-arg ARTIFACTORY_PASSWORD="$ARTIFACTORY_PASSWORD" --build-arg ARTIFACTORY_API_KEY="$ARTIFACTORY_API_KEY" -t ata-ui:dev -f Dockerfile .
+  except:
+    - dev
+    - /^release/.*$/
+
+build dev ata-ui:
+  stage: build
+  image: docker-artifactory.spectrumflow.net/docker/docker:latest
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+  services:
+    - name: docker-artifactory.spectrumflow.net/docker/docker:dind
+  before_script:
+    - docker login docker.aws.ccit.ops.charter.com --username $NEXUS_USER --password $NEXUS_PWD
+    - echo $COT_DESKTOP_TOOLS_LOW_PASSWORD | docker login $COT_DESKTOP_TOOLS_DOCKER_LOW_REPOSITORY --username $COT_DESKTOP_TOOLS_LOW_USER --password-stdin
+  script:
+    - docker build --build-arg ARTIFACTORY_EMAIL="$ARTIFACTORY_EMAIL" --build-arg ENV=dev --build-arg ARTIFACTORY_PASSWORD="$ARTIFACTORY_PASSWORD" --build-arg ARTIFACTORY_API_KEY="$ARTIFACTORY_API_KEY" -t ata-ui:dev -f Dockerfile .
+    - docker tag ata-ui:dev docker.aws.ccit.ops.charter.com/ata/agent-ui:dev
+    - docker push docker.aws.ccit.ops.charter.com/ata/agent-ui:dev
+  only:
+    - dev
+
+deploy to dev ata-ui:
+  stage: deploy
+  environment:
+    name: dev
+  tags:
+    - Nexus
+  when: on_success
+  before_script:
+    - apk add curl
+    - docker login docker.aws.ccit.ops.charter.com --username $NEXUS_USER --password $NEXUS_PWD
+  script: 
+    - curl -X PUT -k -H "Content-Type:application/json" -H "Accept:application/json" -H "Cache-Control:no-cache" -H "Pragma:no-cache" -H "Connect:keep-alive" -H "Accept-Encoding:gzip, deflate, br" -H "Authorization:Bearer $RANCHER_DEV_SPCTRM" -i "https://rancher.dev.spctrm.net/v3/project/c-5wm7p:p-djwcl/workloads/deployment:desk-ata:ata-ui" --data-binary "$(echo "{\"id\":\"deployment:desk-ata:ata-ui\",\"annotations\":{\"cattle.io/timestamp\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}}")"  --compressed
+    - curl -X PUT -k -H "Content-Type:application/json" -H "Accept:application/json" -H "Cache-Control:no-cache" -H "Pragma:no-cache" -H "Connect:keep-alive" -H "Accept-Encoding:gzip, deflate, br" -H "Authorization:Bearer $RANCHER_DEV_SPCTRM" -i "https://rancher.dev.spctrm.net/v3/project/c-2pqzh:p-7g2bw/workloads/deployment:desk-ata:ata-ui" --data-binary "$(echo "{\"id\":\"deployment:desk-ata:ata-ui\",\"annotations\":{\"cattle.io/timestamp\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}}")"  --compressed
+  retry: 2
+  tags:
+    - nexus
+  only:
+    - dev
+
+build qa ata-ui:
+  stage: build
+  image: docker-artifactory.spectrumflow.net/docker/docker:latest
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+  services:
+    - name: docker-artifactory.spectrumflow.net/docker/docker:dind
+  environment:
+    name: qa
+  before_script:
+    - docker login docker-golden.aws.ccit.ops.charter.com --username $NEXUS_USER --password $NEXUS_PWD
+    - echo $COT_DESKTOP_TOOLS_LOW_PASSWORD | docker login $COT_DESKTOP_TOOLS_DOCKER_LOW_REPOSITORY --username $COT_DESKTOP_TOOLS_LOW_USER --password-stdin
+  script:
+    - docker build --build-arg ARTIFACTORY_EMAIL="$ARTIFACTORY_EMAIL" --build-arg ENV=production --build-arg ARTIFACTORY_PASSWORD="$ARTIFACTORY_PASSWORD" --build-arg ARTIFACTORY_API_KEY="$ARTIFACTORY_API_KEY" -t ata-ui:$Version -f Dockerfile .
+    - docker tag ata-ui:$Version docker-golden.aws.ccit.ops.charter.com/ata/agent-ui:$Version
+    - docker push docker-golden.aws.ccit.ops.charter.com/ata/agent-ui:$Version
+  only:
+    variables:
+      - $BranchName == $CI_COMMIT_REF_NAME
+
+
+deploy to qa ata-ui:
+  stage: deploy
+  environment:
+    name: qa
+  tags:
+    - Nexus
+  when: manual
+  before_script:
+    - apk add curl
+  script:
+    - curl -X PUT -k -H "Content-Type:application/json" -H "Accept:application/json" -H "Cache-Control:no-cache" -H "Pragma:no-cache" -H "Connect:keep-alive" -H "Accept-Encoding:gzip, deflate, br" -H "Authorization:Bearer $RANCHER_DEV_SPCTRM" -i "https://rancher.dev.spctrm.net/v3/project/c-rvbrn:p-6xpjh/workloads/deployment:desk-ata:ata-ui" --data-binary "$(echo "{\"id\":\"deployment:desk-ata:ata-ui\",\"annotations\":{\"cattle.io/timestamp\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}}")"  --compressed
+    - curl -X PUT -k -H "Content-Type:application/json" -H "Accept:application/json" -H "Cache-Control:no-cache" -H "Pragma:no-cache" -H "Connect:keep-alive" -H "Accept-Encoding:gzip, deflate, br" -H "Authorization:Bearer $RANCHER_DEV_SPCTRM" -i "https://rancher.dev.spctrm.net/v3/project/c-4wflr:p-wrcc4/workloads/deployment:desk-ata:ata-ui" --data-binary "$(echo "{\"id\":\"deployment:desk-ata:ata-ui\",\"annotations\":{\"cattle.io/timestamp\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}}")"  --compressed
+  only:
+    variables:
+      - $BranchName == $CI_COMMIT_REF_NAME
+
+

@@ -1,0 +1,50 @@
+FROM node:16.15.0 as build
+
+RUN apt-get update && apt-get install -y bash
+RUN apt-get update && apt-get install -y apt-utils
+RUN apt-get update && apt-get install -y sudo
+RUN apt-get update && apt-get install -y curl
+RUN apt-get update && apt-get install -y zip
+RUN apt-get update && apt-get install -y sshpass
+RUN apt-get update && apt-get install -y openssh-client
+
+RUN chpasswd && adduser root sudo
+
+RUN export PATH=$PATH:/usr/bin/sshpass
+
+ARG USERNAME
+ARG PASSWORD
+ARG UAT_HOST
+ARG UAT_IP
+ARG ARTIFACTORY_EMAIL
+ARG ARTIFACTORY_API_KEY
+
+USER root
+RUN mkdir -p /app
+RUN chown root /app
+WORKDIR /app
+ENV PATH /app/node_modules/.bin:$PATH
+
+COPY package.json ./
+COPY package-lock.json ./
+
+# Configuration for Artifactory
+RUN npm config set @kite:registry https://artifactory.spectrumtoolbox.com/artifactory/api/npm/npm/
+RUN curl --fail -u ${ARTIFACTORY_EMAIL}:${ARTIFACTORY_API_KEY} https://artifactory.spectrumtoolbox.com/artifactory/api/npm/auth >> ~/.npmrc
+
+RUN npm install
+COPY . ./
+RUN sh generate-dotenv-uat.sh > .env
+
+RUN npm run build:production
+
+WORKDIR /app/dist
+RUN zip -r /app/dist/agent-training-academy-ui-uat.zip .
+
+RUN sshpass -p "$PASSWORD" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no /app/dist/agent-training-academy-ui-uat.zip $USERNAME@$UAT_IP:/home/svc-ata-bitbucket/
+
+RUN sshpass -p "$PASSWORD" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no /app/deploy-script-uat.sh $USERNAME@$UAT_IP:/home/svc-ata-bitbucket/
+
+RUN sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no $USERNAME@$UAT_IP "sh deploy-script-uat.sh"
+
+RUN rm -rf .env ./.env

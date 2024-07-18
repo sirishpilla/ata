@@ -1,0 +1,9 @@
+# Every new version that is being deployed, please update the version mentioned below accordingly.
+# Major version is Sprint Number and Minor Version is the Application Version for that sprint
+variables:
+  MajorVersion: 69
+  MinorVersion: 1
+  PatchVersion: 0
+  Version: $MajorVersion.$MinorVersion.$PatchVersion
+  # Change the release branch name here matching the version
+  BranchName: release/69.1.0
